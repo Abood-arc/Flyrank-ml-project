@@ -1,0 +1,41 @@
+{
+  "population_size": 34668,
+  "population_clients": 25,
+  "test_fold_size": 20292,
+  "test_fold_clients": 7,
+  "relative_gap_threshold": -20.82,
+  "base_rate": 0.25,
+  "rule_ctr_gap_q75_cut": 0.231,
+  "rule_fire_rate": 0.441,
+  "verify_first_threshold_pct": 700,
+  "review_k": 100,
+  "precision_at_k_model": {
+    "20": 0.4,
+    "50": 0.44,
+    "75": 0.467,
+    "100": 0.47,
+    "150": 0.453,
+    "200": 0.43
+  },
+  "precision_at_k_baseline": {
+    "20": 0.15,
+    "50": 0.08,
+    "75": 0.147,
+    "100": 0.16
+  },
+  "band_counts_full": {
+    "not_flagged": 15503,
+    "monitor_only": 4689,
+    "investigate_quiet_risk": 68,
+    "review_before_revert": 32
+  },
+  "band_counts_top100": {
+    "investigate_quiet_risk": 68,
+    "review_before_revert": 32
+  },
+  "needs_data_check_top100": 56,
+  "top_client_overrepresentation_x": 12.3,
+  "split_seed": 7,
+  "rf_random_state": 42,
+  "rf_n_jobs": 1
+}
