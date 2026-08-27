@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Which Page Declines Next?</title>
+<meta name="description" content="Predicting search-traffic decline before it shows up in a normal monthly report: an honest, client-grouped model built on FlyRank's search-performance warehouse.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,340;9..144,440;9..144,560;9..144,650&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  /* ---------- tokens ---------- */
+  :root{
+    --paper:#F6F7FA; --paper-raised:#FFFFFF; --paper-sunken:#EEF1F5;
+    --ink:#131720; --ink-soft:#4B5262; --ink-faint:#656D7D;
+    --line:#DBE0E8; --line-strong:#C3CADA;
+    --signal:#1B5A9E; --signal-soft:#E8F0F9; --signal-ink:#0F3F73;
+    --flag:#9C5A16; --flag-soft:#F6ECDD; --flag-ink:#7A4611;
+    --good:#2E7D5B; --good-soft:#E7F3ED;
+    --bar-random:#C77F3E; --bar-grouped:#1B5A9E;
+    --shadow: 0 1px 2px rgba(19,23,32,0.04), 0 8px 24px -12px rgba(19,23,32,0.10);
+    --font-display:'Fraunces', ui-serif, Georgia, serif;
+    --font-body:'Source Sans 3', ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+    --font-mono:'IBM Plex Mono', ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#12151C; --paper-raised:#191E28; --paper-sunken:#0D1016;
+      --ink:#E7EAF0; --ink-soft:#AEB4C2; --ink-faint:#858CA0;
+      --line:#2B3140; --line-strong:#3A4254;
+      --signal:#71A8E0; --signal-soft:rgba(113,168,224,0.13); --signal-ink:#BFDAF5;
+      --flag:#E0A868; --flag-soft:rgba(224,168,104,0.14); --flag-ink:#F0CB9B;
+      --good:#72C09E; --good-soft:rgba(114,192,158,0.14);
+      --bar-random:#D99A5B; --bar-grouped:#71A8E0;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#12151C; --paper-raised:#191E28; --paper-sunken:#0D1016;
+    --ink:#E7EAF0; --ink-soft:#AEB4C2; --ink-faint:#858CA0;
+    --line:#2B3140; --line-strong:#3A4254;
+    --signal:#71A8E0; --signal-soft:rgba(113,168,224,0.13); --signal-ink:#BFDAF5;
+    --flag:#E0A868; --flag-soft:rgba(224,168,104,0.14); --flag-ink:#F0CB9B;
+    --good:#72C09E; --good-soft:rgba(114,192,158,0.14);
+    --bar-random:#D99A5B; --bar-grouped:#71A8E0;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--font-body); font-size:16px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--signal-soft); color:var(--signal-ink); }
+  a{ color:var(--signal); text-decoration-thickness:1px; text-underline-offset:2px; }
+  a:focus-visible, button:focus-visible, summary:focus-visible{
+    outline:2px solid var(--signal); outline-offset:2px; border-radius:2px;
+  }
+  @media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
+
+  h1,h2,h3{ font-family:var(--font-display); font-weight:560; color:var(--ink); text-wrap:balance; margin:0; }
+  p{ margin:0 0 1em; max-width:70ch; }
+  .mono{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+  .eyebrow{
+    font-family:var(--font-mono); font-size:0.72rem; letter-spacing:0.09em; text-transform:uppercase;
+    color:var(--ink-faint); font-weight:500;
+  }
+
+  /* ---------- shell ---------- */
+  .wrap{ max-width:760px; margin:0 auto; padding:0 24px; }
+  .wrap-wide{ max-width:880px; margin:0 auto; padding:0 24px; }
+
+  nav.toc{
+    position:sticky; top:0; z-index:10; background:color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter:saturate(140%) blur(8px); -webkit-backdrop-filter:saturate(140%) blur(8px);
+    border-bottom:1px solid var(--line); overflow-x:auto;
+  }
+  nav.toc .wrap-wide{ display:flex; align-items:center; gap:22px; padding-top:12px; padding-bottom:12px; white-space:nowrap; }
+  nav.toc .brand{ font-family:var(--font-mono); font-size:0.8rem; color:var(--ink-soft); font-weight:500; flex:0 0 auto; }
+  nav.toc a{ font-size:0.84rem; color:var(--ink-soft); text-decoration:none; flex:0 0 auto; }
+  nav.toc a:hover{ color:var(--signal); }
+
+  header.masthead{ padding:56px 0 40px; border-bottom:1px solid var(--line); }
+  header.masthead h1{ font-size:clamp(2rem, 4.6vw, 3rem); line-height:1.08; margin:14px 0 18px; max-width:16ch; }
+  header.masthead .dek{ font-size:1.15rem; color:var(--ink-soft); max-width:56ch; margin-bottom:28px; }
+
+  .byline{ display:flex; flex-wrap:wrap; gap:6px 18px; font-size:0.86rem; color:var(--ink-faint); margin-bottom:32px; }
+  .byline strong{ color:var(--ink-soft); font-weight:600; }
+
+  .abstract{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:6px;
+    padding:22px 26px; box-shadow:var(--shadow);
+  }
+  .abstract .eyebrow{ margin-bottom:10px; display:block; }
+  .abstract p{ max-width:none; margin-bottom:0; font-size:1.02rem; }
+  .abstract p + p{ margin-top:0.9em; }
+
+  .stat-row{ display:grid; grid-template-columns:repeat(3, 1fr); gap:1px; background:var(--line);
+    border:1px solid var(--line); border-radius:6px; overflow:hidden; margin-top:28px; }
+  .stat{ background:var(--paper-raised); padding:18px 16px; text-align:left; }
+  .stat .stat-label{ font-family:var(--font-mono); font-size:0.7rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-faint); }
+  .stat .stat-num{ font-family:var(--font-mono); font-weight:600; font-size:1.9rem; margin:4px 0 2px; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .stat .stat-num.accent{ color:var(--signal); }
+  .stat .stat-sub{ font-size:0.8rem; color:var(--ink-soft); }
+  @media (max-width:640px){ .stat-row{ grid-template-columns:1fr; } }
+
+  /* ---------- sections ---------- */
+  section{ padding:52px 0; border-bottom:1px solid var(--line); }
+  section:last-of-type{ border-bottom:none; }
+  .section-head{ display:flex; align-items:baseline; gap:14px; margin-bottom:22px; }
+  .section-head .num{ font-family:var(--font-mono); color:var(--ink-faint); font-size:0.95rem; }
+  .section-head h2{ font-size:1.6rem; }
+  .lede{ font-size:1.05rem; color:var(--ink-soft); max-width:62ch; }
+
+  .panel{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:6px;
+    padding:20px 22px; margin:20px 0;
+  }
+  .panel-tight{ padding:14px 18px; }
+  .panel > *:last-child{ margin-bottom:0; }
+  .panel-title{ font-weight:600; font-size:0.95rem; margin-bottom:8px; color:var(--ink); }
+  .caption{ font-size:0.88rem; color:var(--ink-soft); margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); }
+  .caption strong{ color:var(--ink); }
+
+  .callout{ border-left:3px solid var(--flag); background:var(--flag-soft); border-radius:0 6px 6px 0; padding:16px 20px; margin:20px 0; }
+  .callout p:last-child{ margin-bottom:0; }
+  .callout .panel-title{ color:var(--flag-ink); }
+  .callout-good{ border-left-color:var(--good); background:var(--good-soft); }
+  .callout-good .panel-title{ color:var(--good); }
+
+  figure{ margin:20px 0; }
+  figure img{ max-width:100%; height:auto; display:block; border:1px solid var(--line); border-radius:6px; background:var(--paper-raised); }
+  figcaption{ font-size:0.88rem; color:var(--ink-soft); margin-top:10px; }
+  figcaption strong{ color:var(--ink); }
+
+  .tbl-wrap{ overflow-x:auto; margin:20px 0; border:1px solid var(--line); border-radius:6px; }
+  table{ width:100%; border-collapse:collapse; font-size:0.92rem; min-width:480px; }
+  thead th{ text-align:left; background:var(--paper-sunken); font-family:var(--font-mono); font-size:0.72rem;
+    letter-spacing:0.05em; text-transform:uppercase; color:var(--ink-soft); font-weight:500; padding:10px 14px; white-space:nowrap; }
+  tbody td{ padding:9px 14px; border-top:1px solid var(--line); font-family:var(--font-mono); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  tbody td:first-child{ font-family:var(--font-body); white-space:normal; }
+  tbody tr.hl td{ background:var(--signal-soft); font-weight:600; }
+
+  ul.list, ol.list{ padding-left:1.3em; margin:0 0 1em; }
+  ul.list li, ol.list li{ margin-bottom:0.55em; max-width:66ch; }
+  ul.list li::marker{ color:var(--ink-faint); }
+
+  .band-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px; margin:20px 0; }
+  .band{ border:1px solid var(--line); border-radius:6px; padding:14px 16px; background:var(--paper-raised); }
+  .band .dot{ width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:7px; }
+  .band .n{ font-family:var(--font-mono); font-weight:600; font-size:1.4rem; display:block; margin:6px 0 2px; }
+  .band .lbl{ font-size:0.84rem; color:var(--ink-soft); }
+
+  details{ margin:18px 0; border:1px solid var(--line); border-radius:6px; background:var(--paper-raised); }
+  details[open]{ padding-bottom:6px; }
+  summary{ cursor:pointer; padding:13px 18px; font-weight:600; font-size:0.92rem; list-style:none; display:flex; align-items:center; gap:8px; }
+  summary::-webkit-details-marker{ display:none; }
+  summary::before{ content:'+'; font-family:var(--font-mono); color:var(--signal); width:1em; }
+  details[open] summary::before{ content:'–'; }
+  details .inner{ padding:0 18px 16px; }
+
+  /* split-sensitivity chart, built in CSS from the verified numbers, not a raster export */
+  .chart{ margin:20px 0; }
+  .chart-groups{ display:flex; gap:22px; align-items:flex-end; height:200px; padding:0 4px; border-bottom:1px solid var(--line-strong); }
+  .chart-group{ flex:1; display:flex; gap:6px; align-items:flex-end; justify-content:center; height:100%; }
+  .bar{ width:34px; border-radius:3px 3px 0 0; position:relative; }
+  .bar .val{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-soft); white-space:nowrap; }
+  .bar.random{ background:var(--bar-random); }
+  .bar.grouped{ background:var(--bar-grouped); }
+  .chart-labels{ display:flex; gap:22px; padding:0 4px; margin-top:8px; }
+  .chart-labels span{ flex:1; text-align:center; font-size:0.82rem; color:var(--ink-soft); }
+  .legend{ display:flex; gap:18px; margin-top:14px; font-size:0.84rem; color:var(--ink-soft); }
+  .legend i{ width:11px; height:11px; border-radius:2px; display:inline-block; margin-right:6px; vertical-align:-1px; }
+
+  footer{ padding:40px 0 70px; }
+  footer .wrap{ color:var(--ink-faint); font-size:0.86rem; }
+  footer a{ color:var(--ink-soft); }
+
+  code{ font-family:var(--font-mono); font-size:0.88em; background:var(--paper-sunken); padding:0.1em 0.4em; border-radius:3px; }
+</style>
+</head>
+<body>
+
+<nav class="toc" aria-label="Section navigation">
+  <div class="wrap-wide">
+    <span class="brand">flyrank / capstone</span>
+    <a href="#question">Question</a>
+    <a href="#data">Data</a>
+    <a href="#method">Method</a>
+    <a href="#results">Results</a>
+    <a href="#limitations">Limitations</a>
+    <a href="#recommendations">Recommendations</a>
+    <a href="#reproducibility">Reproducibility</a>
+    <a href="#credit">Credit</a>
+  </div>
+</nav>
+
+<header class="masthead">
+  <div class="wrap">
+    <span class="eyebrow">FlyRank ML Internship — Capstone Research</span>
+    <h1>Which page declines next?</h1>
+    <p class="dek">Predicting search-traffic decline before it shows up in a normal monthly report, then checking honestly whether a trained model actually beats a hand-written rule at it.</p>
+    <div class="byline">
+      <span><strong>Author</strong> Abood-arc</span>
+      <span><strong>Data window</strong> March – June 2026</span>
+      <span><strong>Repo</strong> <a href="https://github.com/Abood-arc/Flyrank-ml-project">github.com/Abood-arc/Flyrank-ml-project</a></span>
+    </div>
+
+    <div class="abstract">
+      <span class="eyebrow">Abstract</span>
+      <p>Out of thousands of content pages, which one is about to decline in search traffic — before the drop is obvious in a normal monthly report? This paper is built on four months (March–June 2026) of FlyRank's pseudonymized search-performance warehouse: 34,668 eligible content items across 25 clients, after excluding pages with too little history, too little traffic, or too few peers at the same client to compare against. A pooled Random Forest classifier, trained on twelve leakage-checked, pre-label features and validated with twenty client-grouped splits (never a random split, never a model retrained per client), was compared against a transparent CTR-and-traffic-share rule on the identical population and metric. The model found a measurable, directional edge, Precision@50 of 0.455 against the rule's 0.135 and a 0.250 base rate, but that edge only holds up because the comparison was checked under an honest split: the same setup under a random split nearly doubles Gradient Boosting's score and flips which algorithm looks best. The result feeds a ranked, reason-coded review queue, not an autopilot: decision-support for a limited weekly review budget, with its own no-go list and monitoring triggers, detailed below.</p>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat">
+        <span class="stat-label">Base rate</span>
+        <span class="stat-num mono">25.0%</span>
+        <span class="stat-sub">share of eligible pages labeled declining</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Baseline rule, P@50</span>
+        <span class="stat-num mono">13.5%</span>
+        <span class="stat-sub">below the base rate (see Results)</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Model (Random Forest), P@50</span>
+        <span class="stat-num mono accent">45.5%</span>
+        <span class="stat-sub">mean of 20 client-grouped splits</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- 1. QUESTION / INTRO -->
+  <section id="question">
+    <div class="wrap">
+      <div class="section-head"><span class="num mono">01</span><h2>The question, and the decision it supports</h2></div>
+      <p class="lede">FlyRank publishes content into client websites at scale, then watches search performance and decides what to fix. Today that triage runs on hand-written flags, a health score and quick-win tags, thresholds a person chose by hand. They work, and they run in production. This project asks a narrower question: on the specific problem of <em>declining</em> pages, does a trained model beat that fixed rule, and by how much can we actually trust the answer?</p>
+      <p>The decision this supports is simple to state and hard to do well: out of thousands of pages, which one does a human look at <strong>first</strong>? Get it wrong and either nothing gets reviewed until the drop is already old news, or a reviewer's limited time goes to pages that were never really at risk.</p>
+      <p>Two framing choices, made early and held throughout:</p>
+      <ul class="list">
+        <li><strong>The label is client-relative, not global.</strong> Decline rates range 0%–93.7% across clients in this dataset, so a single fixed "% drop = decline" cutoff would flag almost every page for an already-struggling client and almost none for a thriving one. A page is labeled declining when its trend falls meaningfully below <em>that client's own</em> median trend, not below a universal number.</li>
+        <li><strong>This predicts decline, not describes it.</strong> FlyRank's existing flags score a page's current state. This model is asked to anticipate a page's near-future state from data that predates the outcome — a genuinely harder, and genuinely different, problem.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 2. DATA -->
+  <section id="data">
+    <div class="wrap">
+      <div class="section-head"><span class="num mono">02</span><h2>Data</h2></div>
+      <p class="lede">Every number in this paper comes from FlyRank's public-safe internship warehouse on Hugging Face, gated behind a free read token, pseudonymized before release, never a live client feed.</p>
+
+      <div class="panel">
+        <div class="panel-title">Source &amp; window</div>
+        <p><code>FlyRank/internship-warehouse</code> — <code>fact_content_daily_performance</code> (daily grain: one row per content item × client × report date) joined to <code>dim_content</code> for static attributes. This analysis spans <strong>March 1 – June 30, 2026</strong>: March+April as the feature window, May→June as the label window.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">What got excluded, and why</div>
+        <ul class="list">
+          <li><strong>Mutable snapshot fields</strong> (<code>last_optimized_date</code>, <code>optimization_eligible_date</code>, <code>is_deleted</code>, <code>is_published</code>): <code>dim_content</code> is a single export-time snapshot, not a per-day history, so these fields don't mean what they'd look like they mean at any given <code>report_date</code>.</li>
+          <li><strong>Undocumented columns</strong> (<code>provider_used</code>, <code>model_used</code>, <code>backlinks</code>, <code>category_count</code>) — excluded on the same rule as everything else in this project: no documentation, no feature.</li>
+          <li><strong>Product flags</strong> (health score and similar) are outputs of decisions FlyRank's product already made, not raw observations. Used only as the thing being compared against, never as a model input.</li>
+          <li><strong>Low-evidence pages</strong> — items missing GSC data in any of the four months, under a 50-impression May floor, or belonging to a client with fewer than 20 eligible items, are excluded from the eligible population entirely, not defaulted to "not declining."</li>
+        </ul>
+      </div>
+
+      <div class="callout">
+        <div class="panel-title">Coverage isn't uniform, and that shapes what's usable</div>
+        <p>GSC data is present for ~36.7% of raw rows; GA4 for only ~4–5.5%. GA4-based features are real evidence for a thin slice of the panel, never treated as a co-equal signal to GSC-derived ones.</p>
+      </div>
+
+      <p><strong>Public safety:</strong> <code>client_hash_id</code> and <code>content_hash_id</code> are one-way pseudonymous hashes — used only for grouping, labeling, and validation splits, never fed to any model as a feature. No client name, domain, or raw query appears anywhere in this analysis.</p>
+    </div>
+  </section>
+
+  <!-- 3. METHODOLOGY -->
+  <section id="method">
+    <div class="wrap">
+      <div class="section-head"><span class="num mono">03</span><h2>Methodology</h2></div>
+      <p class="lede">Twelve features, one pooled model, a rule built first as a fair comparison point, and a validation design chosen specifically because the naive one is dishonest here.</p>
+
+      <h3 style="font-size:1.05rem; margin:28px 0 10px;">Label</h3>
+      <p><code>relative_gap</code> = a page's May→June impression trend, minus that client's own median trend over the same window. A page is <strong>declining</strong> when its <code>relative_gap</code> falls below the 25th-percentile break of this exact population's own distribution (<span class="mono">−20.82</span>, re-derived fresh on every population checked, never copied from an earlier run). Base rate: <span class="mono">0.250</span>.</p>
+
+      <h3 style="font-size:1.05rem; margin:28px 0 10px;">Features (12)</h3>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Feature</th><th>Window</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td>impr_feat, clicks_feat</td><td>Mar+Apr</td><td>Raw GSC impressions / clicks</td></tr>
+          <tr><td>pos_feat</td><td>Mar+Apr</td><td>Impression-weighted average position</td></tr>
+          <tr><td>ctr_feat</td><td>Mar+Apr</td><td>clicks_feat / impr_feat</td></tr>
+          <tr><td>ga4_engaged_feat, has_ga4_feat</td><td>Mar+Apr</td><td>GA4 engaged sessions, gated by availability flag</td></tr>
+          <tr><td>content_type (×4 dummies)</td><td>static</td><td>Content type, one-hot encoded</td></tr>
+          <tr><td>within_window_trend</td><td>Mar → Apr</td><td>Early-warning signal: is the page already sliding before the label window even starts</td></tr>
+          <tr><td>feat_client_share</td><td>Mar+Apr</td><td>This page's share of its own client's feature-window traffic</td></tr>
+        </tbody>
+      </table></div>
+      <p style="font-size:0.9rem; color:var(--ink-soft);">The last two earned their place through testing, not by default: see <a href="#permutation">interpretation</a> below. A client-relative version of <code>pos_feat</code> was tried once and made every metric worse; it was dropped.</p>
+
+      <h3 style="font-size:1.05rem; margin:28px 0 10px;">Baseline</h3>
+      <p>A transparent rule, built first, on observational signals only, no decline label anywhere near it: <code>(expected CTR for this position tier − actual CTR)</code>, floored at zero, × the page's share of its own client's June traffic. Fires on the top quartile of that score. Two candidate signals were tested and rejected before landing here: staleness (survivorship bias: content earning real traffic right now is almost never the stale stuff) and a naive "any positive CTR gap" cut (true for 60% of the population — not a flag, almost everyone).</p>
+
+      <h3 style="font-size:1.05rem; margin:28px 0 10px;">Validation design, and why it isn't optional here</h3>
+      <p>Every comparison below is averaged over <strong>20 client-grouped splits</strong> (<code>GroupShuffleSplit</code>, test_size=0.25, seeds 0–19), never a random row-level split. With only 25 clients feeding this population, a random split lets the model partly memorize which client a page belongs to, inflating the score in a way that won't hold on a client the model has never seen. A single split also isn't trustworthy at this scale on its own: checked across 5 splits early on, Random Forest's Precision@50 alone ranged 0.280–0.600 purely from which clients landed in the test fold. <a href="#results">Results</a> shows exactly how large that honesty gap is, measured, not assumed.</p>
+
+      <details id="leakage">
+        <summary>Leakage checks (expand for the attack table)</summary>
+        <div class="inner">
+          <p>The same attack run at three earlier stages of this project, repeated here on the final 12-feature set (one grouped split, seed=7):</p>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Feature set</th><th>Precision@50</th></tr></thead>
+            <tbody>
+              <tr><td>Honest 12 features</td><td class="mono">0.440</td></tr>
+              <tr><td>+ <code>relative_gap</code> (label-derived leak)</td><td class="mono">1.000</td></tr>
+              <tr><td>+ <code>impr_jun</code> (future-window leak, no formula tie to the label)</td><td class="mono">0.720</td></tr>
+            </tbody>
+          </table></div>
+          <p style="margin-top:12px;"><code>relative_gap</code> is the exact number <code>is_declining</code> is thresholded from, so handing it to the model hands over the answer key. <code>impr_jun</code> has no arithmetic relationship to the label at all and still nearly doubles the honest score. Future data doesn't need to share the label's formula to be fatal. All 12 shipped features are March+April-only by construction: five are summed only over the feature window in the SQL that builds them, <code>within_window_trend</code> compares March to April and never touches May or June, <code>feat_client_share</code> uses feature-window traffic only, and <code>content_type</code> has no time dimension to leak through.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- 4. RESULTS -->
+  <section id="results">
+    <div class="wrap">
+      <div class="section-head"><span class="num mono">04</span><h2>Results: model vs. baseline, same split</h2></div>
+      <p class="lede">On the shared, honestly-reconciled population (model-eligible ∩ baseline-eligible, client floor applied last), Random Forest beats both the rule and the two other methods tested.</p>
+
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Method</th><th>P@50 (mean)</th><th>range</th><th>P@20 (mean)</th><th>range</th></tr></thead>
+        <tbody>
+          <tr><td>Base rate</td><td class="mono">0.250</td><td class="mono">—</td><td class="mono">0.250</td><td class="mono">—</td></tr>
+          <tr><td>Baseline rule</td><td class="mono">0.135</td><td class="mono">0.060–0.240</td><td class="mono">0.105</td><td class="mono">0.000–0.250</td></tr>
+          <tr><td>Logistic Regression</td><td class="mono">0.381</td><td class="mono">0.220–0.680</td><td class="mono">0.313</td><td class="mono">0.150–0.650</td></tr>
+          <tr class="hl"><td>Random Forest</td><td class="mono">0.455</td><td class="mono">0.220–0.600</td><td class="mono">0.452</td><td class="mono">0.150–0.650</td></tr>
+          <tr><td>Gradient Boosting</td><td class="mono">0.382</td><td class="mono">0.220–0.600</td><td class="mono">0.382</td><td class="mono">0.100–0.650</td></tr>
+        </tbody>
+      </table></div>
+      <p style="font-size:0.9rem; color:var(--ink-soft);">n = 34,668 items / 25 clients. Same rows, same metric, same tie-break (impression volume, descending) for every method — a comparison contract, not just a shared dataset.</p>
+
+      <figure>
+        <img src="img/precision_at_k_capstone.png" alt="Line chart of Precision@K for the Random Forest model versus the baseline rule versus the base rate, K from 20 to 200" loading="lazy">
+        <figcaption><strong>Model precision holds well above both the baseline and the base rate across the whole practical queue-size range (K=20–200)</strong> on this holdout fold. The advantage isn't an artifact of picking one convenient K.</figcaption>
+      </figure>
+
+      <p>Precise about what "beats the baseline" means: the baseline rule was never built to predict decline. It deliberately has no forward-looking label anywhere in it, by design, from the week it was built. So this is <em>a dedicated predictor beating a repurposed heuristic</em>, not "the baseline is broken." The next subsection explains why the repurposing specifically fails, not just that it does.</p>
+
+      <h3 style="font-size:1.05rem; margin:32px 0 10px;">Why the baseline underperforms its own base rate</h3>
+      <p>The rule's own CTR-gap term is mildly predictive on its own — its worst quartile declines 29.9% of the time against the 25% base rate. The problem is the other half of the formula: <code>client_traffic_share</code>, added specifically to stop the score rewarding raw traffic volume, has a clean <strong>inverse</strong> relationship with decline (31.9% at low share → 20.6% at high share, corr −0.034). Multiplying the two together systematically boosts high-share pages, the stable, established ones least likely to be the ones about to decline. The rule's own top 50 carries <strong>57×</strong> the population's average traffic share, and a top-50 decline rate of just 0.120 against the 0.250 base rate. Not a bug — a design choice that was reasonable for the rule's original job (surfacing current underperformance) and works against a job it was never asked to do until this comparison asked it to.</p>
+
+      <h3 id="permutation" style="font-size:1.05rem; margin:32px 0 10px;">What the model actually leans on</h3>
+      <p>Permutation importance, checked across 10 splits (not one, a single-split check first suggested position mattered; it doesn't survive proper scrutiny):</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Feature</th><th>Mean importance drop</th><th>Positive in</th></tr></thead>
+        <tbody>
+          <tr><td>within_window_trend</td><td class="mono">0.0279</td><td class="mono">10/10</td></tr>
+          <tr><td>impr_feat</td><td class="mono">0.0139</td><td class="mono">10/10</td></tr>
+          <tr><td>feat_client_share</td><td class="mono">0.0103</td><td class="mono">9/10</td></tr>
+          <tr><td>ctr_feat</td><td class="mono">0.0057</td><td class="mono">7/10</td></tr>
+          <tr><td>pos_feat</td><td class="mono">0.0006</td><td class="mono">5/10 — near zero, despite looking dominant by impurity</td></tr>
+        </tbody>
+      </table></div>
+      <p style="font-size:0.9rem; color:var(--ink-soft);">Two follow-ups, both negative results reported honestly: trimming to only the "robust" features made Random Forest <em>worse</em> (P@50 0.417→0.398): importance doesn't predict what removal does, a weak feature can still help through interactions. Flooring <code>within_window_trend</code>'s noisiest low-volume denominators also made it worse (0.423→0.410) — the model is apparently robust enough to the outliers that cleaning them removed real signal along with noise.</p>
+
+      <h3 style="font-size:1.05rem; margin:32px 0 10px;">The split that almost fooled us</h3>
+      <p>Every number above uses a client-grouped split. Here's the same comparison under a plain random split that ignores which client a page belongs to, the split most people reach for by default.</p>
+
+      <div class="chart">
+        <div class="chart-groups">
+          <div class="chart-group">
+            <div class="bar random" style="height:24.8%"><span class="val">0.149</span></div>
+            <div class="bar grouped" style="height:22.5%"><span class="val">0.135</span></div>
+          </div>
+          <div class="chart-group">
+            <div class="bar random" style="height:68.3%"><span class="val">0.410</span></div>
+            <div class="bar grouped" style="height:63.5%"><span class="val">0.381</span></div>
+          </div>
+          <div class="chart-group">
+            <div class="bar random" style="height:93.5%"><span class="val">0.561</span></div>
+            <div class="bar grouped" style="height:75.8%"><span class="val">0.455</span></div>
+          </div>
+          <div class="chart-group">
+            <div class="bar random" style="height:98.3%"><span class="val">0.590</span></div>
+            <div class="bar grouped" style="height:63.7%"><span class="val">0.382</span></div>
+          </div>
+        </div>
+        <div class="chart-labels">
+          <span>Baseline</span><span>Logistic Reg.</span><span>Random Forest</span><span>Gradient Boosting</span>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--bar-random)"></i>Random split (ignores client)</span>
+          <span><i style="background:var(--bar-grouped)"></i>Client-grouped split (honest)</span>
+        </div>
+      </div>
+      <p class="caption">Bars show mean Precision@50 across 20 seeds for each split type. <strong>The untrained baseline barely moves — exactly what an honest control should do.</strong> Random Forest moves modestly (gap +0.106). Gradient Boosting moves so much (gap +0.208) that its ranking against Random Forest flips: GBM wins 13 of 20 random-split seeds, but Random Forest wins 14 of 20 grouped-split seeds. Under the tempting split, you'd ship the wrong model.</p>
+
+      <div class="callout">
+        <div class="panel-title">Why Random Forest is used, and Gradient Boosting isn't</div>
+        <p>Not "GBM lost once" — it lost consistently across every honest, client-grouped check run, and is <em>more</em> sensitive to split choice than Random Forest, not less. Swapping it back in later needs its own re-validation, not just a retrain.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. LIMITATIONS -->
+  <section id="limitations">
+    <div class="wrap">
+      <div class="section-head"><span class="num mono">05</span><h2>Limitations &amp; honest framing</h2></div>
+      <p class="lede">What this work does not claim, stated before a reader has to find it themselves.</p>
+
+      <ul class="list">
+        <li><strong>This isn't forecasting a page's own trajectory.</strong> A dedicated persistence check (five different methods: 30-day and 60-day trend ratios, a regression slope, a position-based version, "declining twice in a row") all came back near a coin flip (0.85×–1.12× lift over chance). A page's own recent trend does not meaningfully predict its own near-future trend, at any window or method tested. What the model actually predicts is narrower: whether <em>other</em> properties of a page (an early within-window slide, its share of its own client's traffic, position, clicks) associate with this specific label — which turned out to be answerable, even though the first, more ambitious question wasn't.</li>
+        <li><strong>An open, unresolved sign flip.</strong> <code>feat_client_share</code> (March+April, a model feature) predicts decline <em>positively</em>: low share associates with less decline. <code>client_traffic_share</code> (June, the baseline's own term, a structurally similar idea in a different window) predicts it <em>negatively</em>. A mean-reversion explanation is plausible — a page with an unusually high recent share may partly reflect a temporary spike that naturally regresses — but it's untested, not confirmed. Flagged here rather than quietly carried forward.</li>
+        <li><strong>Split-sensitivity itself is only partly understood.</strong> Gradient Boosting is measurably more vulnerable to an ungrouped split than Random Forest, reproduced across two separate runs — but <em>why</em> isn't tested. More flexibility giving it more room to fit client-specific noise is plausible, not confirmed.</li>
+        <li><strong>This is a historical-fold demonstration, not a live production run.</strong> The action queue below is scored against May→June 2026, a period with a known outcome. Standing this up against a real current month means re-pulling the feature window and scoring items with no known outcome yet — a real next step, not done here.</li>
+        <li><strong>New items are excluded by inference, not by a direct check.</strong> There's no content-creation-date field in this schema, only an edit-history field. Requiring real GSC data across all four months rules out anything that only recently started appearing, but that can't be independently confirmed against an actual creation timestamp.</li>
+        <li><strong>Small, specific population.</strong> 34,668 items across 25 clients is the honest cost of a fair, doubly-eligible comparison, smaller than either eligibility chain alone. Results describe this cohort and this label design; they are not a claim about generalizing to a different month, a different client mix, or a different definition of decline.</li>
+        <li><strong>No causal claim, anywhere.</strong> Nothing here establishes that any feature <em>causes</em> decline, and nothing claims to model or predict a Google ranking algorithm. Every number is observed, measured, directional, decision-support — never causal.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 6. RECOMMENDATIONS -->
+  <section id="recommendations">
+    <div class="wrap">
+      <div class="section-head"><span class="num mono">06</span><h2>Ranked recommendations: the action playbook</h2></div>
+      <p class="lede">The model's score alone isn't a queue. Priority (the model's probability) and reason (whether the transparent rule agrees) are fused into four bands, each with its own action and its own kind of human check.</p>
+
+      <figure>
+        <img src="img/action_bands_capstone.png" alt="Bar chart, log scale, of item counts across four action bands: review before revert, investigate quiet risk, monitor only, not flagged" loading="lazy">
+        <figcaption><strong>Of 20,292 eligible items in this holdout fold, only 100 (0.5%) get a "do something this week" action.</strong> That's the real size of a week's work here — not the eligible population, and not a flood of alerts.</figcaption>
+      </figure>
+
+      <div class="band-grid">
+        <div class="band"><span class="dot" style="background:#2b6cb0"></span><span class="lbl">review_before_revert</span><span class="n mono">32</span><span class="lbl">rule and model agree</span></div>
+        <div class="band"><span class="dot" style="background:#d69e2e"></span><span class="lbl">investigate_quiet_risk</span><span class="n mono">68</span><span class="lbl">model flags, rule doesn't corroborate</span></div>
+        <div class="band"><span class="dot" style="background:#38a169"></span><span class="lbl">monitor_only</span><span class="n mono">4,689</span><span class="lbl">positive trend, watched not acted on</span></div>
+        <div class="band"><span class="dot" style="background:#a0aec0"></span><span class="lbl">not_flagged</span><span class="n mono">15,503</span><span class="lbl">no signal this period</span></div>
+      </div>
+
+      <ul class="list">
+        <li><strong>review_before_revert</strong>: rule and model agree. Still needs a person to inspect the page and form a hypothesis before anyone reverts or edits anything.</li>
+        <li><strong>investigate_quiet_risk</strong>: mandatory review, not optional. The model flags it but the rule has no independent reason backing it, so there's no "why" to hand a reviewer without looking.</li>
+        <li><strong>Every item flagged <code>verify_first</code></strong> (a &gt;700% / 7× within-window swing, this population's own 97th percentile) gets a data-sanity check before any content judgment. In the exported top-100 queue, 56 items carry this flag. Checked directly whether the swing predicts false positives — it doesn't (46.4% decline rate above the threshold vs. 47.7% below) — so it's a sequencing rule, not a true/false-positive filter: verify the number's real before treating it as a content problem either way.</li>
+        <li><strong>Priority order and value order diverge.</strong> The model's probability ranks who to look at first; it doesn't rank what's worth the most if a reviewer only gets through part of the queue. In this fold's top 100, the single highest expected click-lift (96 clicks/month) sits at priority rank 69, not rank 1. Both orderings ship in the export.</li>
+      </ul>
+
+      <div class="callout">
+        <div class="panel-title">One client, 12.3× over-represented in the top 100 — check this before trusting it as 100 independent findings</div>
+        <p>One client held 45 of the top-100 queue on this fold, against just 3.7% of the eligible population. Traced to volume, not the client-share feature: that client has an unusually high share of items sitting at a near-zero March baseline, exactly where <code>within_window_trend</code> gets noisiest. Look at that client's pages by hand before treating its 45 rows as 45 separate problems.</p>
+      </div>
+
+      <h3 style="font-size:1.05rem; margin:32px 0 10px;">What should never be automated</h3>
+      <ul class="list">
+        <li>No content edit or revert applied automatically off this list: every action ends at a human decision.</li>
+        <li>No per-client retraining or per-client thresholds — one pooled model, on purpose, held since the label was first designed.</li>
+        <li>No swapping Gradient Boosting in for convenience without re-running the split-sensitivity check above.</li>
+        <li>No treating an <code>investigate_quiet_risk</code> flag as a validated finding — it's a lead to check, not a conclusion.</li>
+        <li>No running this queue against a live current month without rebuilding the feature window and re-validating first.</li>
+      </ul>
+
+      <h3 style="font-size:1.05rem; margin:32px 0 10px;">Monitoring &amp; retrain triggers</h3>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Check</th><th>Trigger</th></tr></thead>
+        <tbody>
+          <tr><td>Pre-release drift</td><td>Population size drifts &gt;15%, or client count / feature schema changes from the validated baseline (34,668 / 25 / 12)</td></tr>
+          <tr><td>Post-label drift</td><td>Next period's actual decline rate shifts &gt;5 points from the 0.250 training base rate — pause releases for review</td></tr>
+          <tr><td>Fallback</td><td>Model underperforms the frozen baseline rule for two consecutive monitoring periods → revert to the rule until re-validated</td></tr>
+          <tr><td>Retrain</td><td>Material client-roster shift, upstream schema change, or two consecutive post-label misses</td></tr>
+        </tbody>
+      </table></div>
+      <p style="font-size:0.9rem; color:var(--ink-soft);">Known open gap, named rather than silently handled: recently-optimized pages need a deployment-time join against whatever FlyRank's product already acted on, so this queue doesn't re-flag something already being fixed. Proposed, not yet built.</p>
+    </div>
+  </section>
+
+  <!-- 7. REPRODUCIBILITY -->
+  <section id="reproducibility">
+    <div class="wrap">
+      <div class="section-head"><span class="num mono">07</span><h2>Reproducibility</h2></div>
+      <p class="lede">Every number above traces to an executed, committed notebook cell — not a remembered figure. <code>capstone.ipynb</code> is the canonical source: one self-contained notebook that rebuilds the population, runs the leakage attack, the 20-seed comparison, and the action queue in a single top-to-bottom pass, and is the source for every number in this paper.</p>
+
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Notebook</th><th>Covers</th></tr></thead>
+        <tbody>
+          <tr class="hl"><td><a href="https://github.com/Abood-arc/Flyrank-ml-project/blob/main/work/notebooks/capstone.ipynb">capstone.ipynb</a></td><td>Canonical source for this paper — full pipeline in one run, start to finish</td></tr>
+          <tr><td><a href="https://github.com/Abood-arc/Flyrank-ml-project/blob/main/work/notebooks/w03_data_contract.ipynb">w03_data_contract.ipynb</a></td><td>Data contract, column exclusions, availability audit</td></tr>
+          <tr><td><a href="https://github.com/Abood-arc/Flyrank-ml-project/blob/main/work/notebooks/w04_baseline_score.ipynb">w04_baseline_score.ipynb</a></td><td>Baseline rule, signal audit, eligibility funnel</td></tr>
+          <tr><td><a href="https://github.com/Abood-arc/Flyrank-ml-project/blob/main/work/notebooks/w05_model.ipynb">w05_model.ipynb</a></td><td>Feature build, label design, model comparison, error analysis</td></tr>
+          <tr><td><a href="https://github.com/Abood-arc/Flyrank-ml-project/blob/main/work/notebooks/w06_validation_audit.ipynb">w06_validation_audit.ipynb</a></td><td>Random-vs-grouped split audit, leakage attack, claim rewrite</td></tr>
+          <tr><td><a href="https://github.com/Abood-arc/Flyrank-ml-project/blob/main/work/notebooks/w07_action_playbook.ipynb">w07_action_playbook.ipynb</a></td><td>Ranked action queue, bands, monitoring triggers</td></tr>
+        </tbody>
+      </table></div>
+
+      <p>The weekly notebooks above are the incremental audit trail: each one is where a specific check (the leakage attack, the split-sensitivity audit, the action bands) was first built and independently verified. <code>capstone.ipynb</code> re-runs all of it fresh in one pass; small differences between its numbers and an individual weekly notebook's own original numbers are expected run-to-run variance, not a discrepancy — see the note below.</p>
+
+      <div class="panel panel-tight">
+        <div class="panel-title">Seeds &amp; environment</div>
+        <p style="margin-bottom:0;"><code>RandomForestClassifier(random_state=42)</code> · <code>GroupShuffleSplit</code> seeds 0–19 (20 splits, test_size=0.25) for every averaged comparison · seed=7 for the single-fold error analysis and the exported action queue, reproducibility-checked as byte-identical across two independent fits at <code>n_jobs=1</code>. DuckDB queries <code>hf://datasets/FlyRank/internship-warehouse</code> directly: no local dataset copy, nothing to accidentally commit. Environment: Python, <code>duckdb</code>, <code>pandas</code>, <code>scikit-learn</code> (see <code>requirements.txt</code> in the repo).</p>
+      </div>
+
+      <p style="font-size:0.9rem; color:var(--ink-soft);">Small run-to-run drift in Random Forest / Gradient Boosting numbers between environments (a few thousandths to a few hundredths of Precision@50) is expected variance from tree-ensemble internals across machines, not a discrepancy — every headline number in this paper was independently reproduced against the live warehouse at least three times across two environments (local and Colab), with the same qualitative shape every time: Random Forest beats the baseline and Gradient Boosting on the honest split, and Gradient Boosting's ranking flips under a random one.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer id="credit">
+  <div class="wrap">
+    <div class="panel">
+      <div class="panel-title">Acknowledgments &amp; data credit</div>
+      <p>Built on the <strong>FlyRank ML Internship dataset</strong>, a pseudonymized, public-safe release of real search-performance data, gated behind a free Hugging Face read token. Data source: <a href="https://flyrank.ai">flyrank.ai</a>.</p>
+      <p style="margin-bottom:0;">Prepared as part of the FlyRank ML Internship capstone. Full code, notebooks, and this page's source: <a href="https://github.com/Abood-arc/Flyrank-ml-project">github.com/Abood-arc/Flyrank-ml-project</a>.</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
